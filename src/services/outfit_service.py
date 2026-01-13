@@ -30,8 +30,8 @@ class OutfitService:
 
     CANVAS_WIDTH = 1080
     CANVAS_HEIGHT = 1920
-    TILE_SIZE = 353  # Closest to detected 353x352 placeholder
-    TILE_X = [0, 365, 727]
+    TILE_SIZE = 380  # Larger images, more compact layout
+    TILE_X = [40, 350, 660]  # Left/right moved inward
     TILE_Y = [435, 891, 1361]
     LABEL_OFFSET_Y = -70
     LABEL_FONT_SIZE = 80
