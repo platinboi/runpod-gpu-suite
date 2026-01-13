@@ -1,0 +1,33 @@
+# Environment (contains secrets)
+.env
+.env.*
+.env.local
+.env.runpod
+
+# Scripts with credentials
+batch_reprocess.py
+batch_rembg*.py
+
+# Documentation with API keys
+n8n-nodes-runpod.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.temp

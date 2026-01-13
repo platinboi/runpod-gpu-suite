@@ -1,0 +1,26 @@
+# RunPod Serverless
+runpod>=1.6.0
+
+# Background Removal (GPU accelerated)
+rembg[gpu]>=2.0.50
+onnxruntime-gpu>=1.16.0
+
+# Image Processing
+Pillow>=10.0.0
+
+# Storage (R2/S3)
+boto3>=1.28.0
+
+# HTTP client for URL downloads
+aiohttp>=3.9.0
+aiofiles>=23.2.0
+requests>=2.31.0
+
+# Data validation
+pydantic>=2.5.0
+
+# PostgreSQL database
+psycopg2-binary>=2.9.9
+
+# Environment variables
+python-dotenv>=1.0.0
