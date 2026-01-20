@@ -4,6 +4,7 @@ RunPod Serverless Handler for GPU-accelerated media processing.
 Supports all endpoints from the original FFmpeg scripts:
 - /outfit - 9-image outfit collage
 - /outfit-single - 6-image overlapping collage
+- /fitpic - 7-image static JPEG collage (4:5 aspect ratio)
 - /pov - 8-image POV collage
 - /merge - Merge clips with overlays
 - /overlay - Text overlay
@@ -70,6 +71,9 @@ def get_service(name: str):
         elif name == 'database':
             from services.database_service import DatabaseService
             _services[name] = DatabaseService()
+        elif name == 'fitpic':
+            from services.fitpic_service import FitpicService
+            _services[name] = FitpicService()
     return _services[name]
 
 
@@ -186,6 +190,58 @@ async def handle_outfit_single(input_data: dict) -> dict:
 
     except Exception as e:
         logger.error(f"Error in outfit-single: {e}")
+        cleanup_file(output_path)
+        return {"error": str(e)}
+
+
+# ============================================================================
+# FITPIC STATIC IMAGE (7 images, 4:5 aspect ratio)
+# ============================================================================
+async def handle_fitpic(input_data: dict) -> dict:
+    """Create 7-image fitpic static JPEG collage."""
+    from models.schemas import FitpicRequest
+
+    start_time = time.time()
+    output_path = None
+
+    try:
+        request = FitpicRequest(**input_data)
+
+        output_filename = f"fitpic_{uuid.uuid4()}.jpg"
+        output_path = os.path.join(Config.TEMP_DIR, output_filename)
+
+        fitpic_service = get_service('fitpic')
+        result = await fitpic_service.create_fitpic_image(
+            request=request,
+            output_path=output_path
+        )
+
+        processing_time = time.time() - start_time
+
+        storage_service = get_service('storage')
+        if storage_service.enabled:
+            r2_url = await storage_service.upload_file(
+                file_path=output_path,
+                object_name=f"fitpic/{output_filename}",
+                user_id=None,
+                file_type="outputs",
+                public=True
+            )
+
+            cleanup_file(output_path)
+
+            return {
+                "status": "success",
+                "message": "Fitpic image created successfully",
+                "filename": output_filename,
+                "download_url": r2_url,
+                "processing_time": processing_time
+            }
+        else:
+            return {"error": "R2 storage not enabled"}
+
+    except Exception as e:
+        logger.error(f"Error in fitpic: {e}")
         cleanup_file(output_path)
         return {"error": str(e)}
 
@@ -677,6 +733,8 @@ async def async_handler(job: dict) -> dict:
             return await handle_outfit(job_input)
         elif action == "outfit-single":
             return await handle_outfit_single(job_input)
+        elif action == "fitpic":
+            return await handle_fitpic(job_input)
         elif action == "pov":
             return await handle_pov(job_input)
 

@@ -507,6 +507,32 @@ class OutfitSingleResponse(BaseModel):
     processing_time: Optional[float] = None
 
 
+class FitpicRequest(BaseModel):
+    """Request model for fitpic static image collage (7 images, 4:5 aspect ratio)"""
+    images: Dict[Literal["npc_logo", "brand_logo", "hoodie", "hat", "meme", "shoes", "pants"], HttpUrl]
+    quality: Optional[int] = Field(95, ge=1, le=100)
+    response_format: Optional[Literal["binary", "url"]] = "url"
+
+    @field_validator("images")
+    @classmethod
+    def validate_image_keys(cls, v: Dict[str, HttpUrl]) -> Dict[str, HttpUrl]:
+        """Ensure all required slot keys are present"""
+        required = {"npc_logo", "brand_logo", "hoodie", "hat", "meme", "shoes", "pants"}
+        missing = required - set(v.keys())
+        if missing:
+            raise ValueError(f"Missing image slots: {', '.join(sorted(missing))}")
+        return v
+
+
+class FitpicResponse(BaseModel):
+    """Response model for fitpic endpoint"""
+    status: Literal["success", "error"]
+    message: str
+    filename: Optional[str] = None
+    download_url: Optional[str] = None
+    processing_time: Optional[float] = None
+
+
 class RembgRequest(BaseModel):
     """Request model for background removal"""
     image_url: HttpUrl
