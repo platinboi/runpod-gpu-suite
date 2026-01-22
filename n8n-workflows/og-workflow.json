@@ -14,31 +14,36 @@
       "parameters": {
         "method": "POST",
         "url": "https://api.runpod.ai/v2/66as0tbqrsm2fp/runsync",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_RUNPOD_API_KEY"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"input\": {\n    \"action\": \"og\",\n    \"video_url\": \"{{ $json.video_url }}\"\n  }\n}",
         "options": {
-          "timeout": 300000
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
         }
       },
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.3,
       "position": [220, 0],
       "id": "og-request",
-      "name": "Repurpose Video",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "runpod-api-key",
-          "name": "RunPod API Key"
-        }
-      }
+      "name": "OG - RunPod Repurpose"
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "// Extract video URL from response\nconst output = $input.first().json.output;\n\nif (output.status === 'error') {\n  return { error: output.error || output.message };\n}\n\n// Return video details\nreturn [{\n  filename: output.video.filename,\n  video_url: output.video.download_url,\n  randomization: output.video.randomization,\n  processing_time: output.processing_time\n}];"
+        "jsCode": "// Extract video URL from response\nconst output = $input.first().json.body.output;\n\nif (output.status === 'error') {\n  return { error: output.error || output.message };\n}\n\n// Return video details\nreturn [{\n  filename: output.video.filename,\n  video_url: output.video.download_url,\n  randomization: output.video.randomization,\n  processing_time: output.processing_time\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -49,9 +54,9 @@
   ],
   "connections": {
     "Manual Trigger": {
-      "main": [[{"node": "Repurpose Video", "type": "main", "index": 0}]]
+      "main": [[{"node": "OG - RunPod Repurpose", "type": "main", "index": 0}]]
     },
-    "Repurpose Video": {
+    "OG - RunPod Repurpose": {
       "main": [[{"node": "Extract Video URL", "type": "main", "index": 0}]]
     }
   },
