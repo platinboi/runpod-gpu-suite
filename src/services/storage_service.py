@@ -26,7 +26,7 @@ class StorageService:
                 # Initialize R2 client using S3-compatible API
                 self.client = boto3.client(
                     's3',
-                    endpoint_url=Config.R2_ENDPOINT,
+                    endpoint_url=f'https://{Config.R2_ACCOUNT_ID}.r2.cloudflarestorage.com',
                     aws_access_key_id=Config.R2_ACCESS_KEY_ID,
                     aws_secret_access_key=Config.R2_SECRET_ACCESS_KEY,
                     config=BotoConfig(
