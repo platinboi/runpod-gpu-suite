@@ -6,6 +6,7 @@ Supports all endpoints from the original FFmpeg scripts:
 - /outfit-single - 6-image overlapping collage
 - /fitpic - 7-image static JPEG collage (4:5 aspect ratio)
 - /pov - 8-image POV collage
+- /stein - Algorithmically unique video output (anti-hash detection)
 - /merge - Merge clips with overlays
 - /overlay - Text overlay
 - /rembg - Background removal (GPU)
@@ -74,6 +75,9 @@ def get_service(name: str):
         elif name == 'fitpic':
             from services.fitpic_service import FitpicService
             _services[name] = FitpicService()
+        elif name == 'stein':
+            from services.stein_service import SteinService
+            _services[name] = SteinService()
     return _services[name]
 
 
@@ -243,6 +247,75 @@ async def handle_fitpic(input_data: dict) -> dict:
     except Exception as e:
         logger.error(f"Error in fitpic: {e}")
         cleanup_file(output_path)
+        return {"error": str(e)}
+
+
+# ============================================================================
+# STEIN (Algorithmically Unique Video)
+# ============================================================================
+async def handle_stein(input_data: dict) -> dict:
+    """Create algorithmically unique video(s) from STEIN clips."""
+    from models.schemas import SteinRequest
+
+    start_time = time.time()
+    temp_files = []
+
+    try:
+        request = SteinRequest(**input_data)
+        count = request.count
+
+        storage_service = get_service('storage')
+        if not storage_service.enabled:
+            return {"error": "R2 storage not enabled"}
+
+        stein_service = get_service('stein')
+        videos = []
+
+        for i in range(count):
+            output_filename = f"stein_{uuid.uuid4()}.mp4"
+            output_path = os.path.join(Config.TEMP_DIR, output_filename)
+            temp_files.append(output_path)
+
+            result = await stein_service.create_stein_video(output_path=output_path)
+
+            r2_url = await storage_service.upload_file(
+                file_path=output_path,
+                object_name=f"stein/{output_filename}",
+                user_id=None,
+                file_type="outputs",
+                public=True
+            )
+
+            cleanup_file(output_path)
+
+            videos.append({
+                "filename": output_filename,
+                "download_url": r2_url,
+                "source_clip": result.get("source_clip"),
+                "randomization": {
+                    "fade_duration": result.get("fade_duration"),
+                    "fade_black_opacity": result.get("fade_black_opacity"),
+                    "stretch_direction": result.get("stretch_direction"),
+                    "stretch_amount": result.get("stretch_amount"),
+                    "slowdown_percent": result.get("slowdown_percent"),
+                    "num_logo_positions": result.get("num_logo_positions")
+                }
+            })
+
+        processing_time = time.time() - start_time
+
+        return {
+            "status": "success",
+            "message": f"Created {count} stein video(s) successfully",
+            "count": count,
+            "videos": videos,
+            "processing_time": processing_time
+        }
+
+    except Exception as e:
+        logger.error(f"Error in stein: {e}")
+        for f in temp_files:
+            cleanup_file(f)
         return {"error": str(e)}
 
 
@@ -710,7 +783,9 @@ async def async_handler(job: dict) -> dict:
     Supported actions:
     - outfit: 9-image outfit collage
     - outfit-single: 6-image overlapping collage
+    - fitpic: 7-image static JPEG collage (4:5 aspect ratio)
     - pov: 8-image POV collage
+    - stein: Algorithmically unique video output
     - merge: Merge video clips with overlays
     - overlay: Add text overlay to image/video
     - rembg: Remove background from image (GPU)
@@ -735,6 +810,8 @@ async def async_handler(job: dict) -> dict:
             return await handle_outfit_single(job_input)
         elif action == "fitpic":
             return await handle_fitpic(job_input)
+        elif action == "stein":
+            return await handle_stein(job_input)
         elif action == "pov":
             return await handle_pov(job_input)
 

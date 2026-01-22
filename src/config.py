@@ -31,13 +31,13 @@ class Config:
         "application/octet-stream"  # Fallback for uploads without proper MIME type
     }
 
-    # R2 Configuration (optional - for future use)
-    R2_ENABLED = os.getenv("R2_ENABLED", "false").lower() == "true"
-    R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")
-    R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "")
-    R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
-    R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "")
-    R2_CUSTOM_DOMAIN = os.getenv("R2_CUSTOM_DOMAIN", "")  # Optional custom domain
+    # R2 Configuration - using CLOUDFLARE_R2_* env vars from .env
+    R2_ENABLED = os.getenv("CLOUDFLARE_R2_ACCESS_KEY", "") != ""
+    R2_ENDPOINT = os.getenv("CLOUDFLARE_R2_ENDPOINT", "")
+    R2_ACCESS_KEY_ID = os.getenv("CLOUDFLARE_R2_ACCESS_KEY", "")
+    R2_SECRET_ACCESS_KEY = os.getenv("CLOUDFLARE_R2_SECRET_KEY", "")
+    R2_BUCKET_NAME = os.getenv("CLOUDFLARE_R2_BUCKET", "")
+    R2_CUSTOM_DOMAIN = os.getenv("CLOUDFLARE_R2_PUBLIC_URL", "").replace("https://", "")
 
     # Merge/Concat Configuration
     MAX_MERGE_CLIPS = int(os.getenv("MAX_MERGE_CLIPS", 10))  # Maximum clips per merge request

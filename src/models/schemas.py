@@ -557,3 +557,17 @@ class RembgResponse(BaseModel):
     filename: Optional[str] = None
     download_url: Optional[str] = None
     processing_time: Optional[float] = None
+
+
+class SteinRequest(BaseModel):
+    """Request model for stein video processing (algorithmically unique output)"""
+    count: int = Field(default=1, ge=1, le=10, description="Number of variations to generate (1-10)")
+
+
+class SteinResponse(BaseModel):
+    """Response model for stein endpoint"""
+    status: Literal["success", "error"]
+    message: str
+    count: int = 1
+    videos: Optional[List[dict]] = None  # List of {filename, download_url, randomization}
+    processing_time: Optional[float] = None
