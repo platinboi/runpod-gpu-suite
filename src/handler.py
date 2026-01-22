@@ -7,6 +7,7 @@ Supports all endpoints from the original FFmpeg scripts:
 - /fitpic - 7-image static JPEG collage (4:5 aspect ratio)
 - /pov - 8-image POV collage
 - /stein - Algorithmically unique video output (anti-hash detection)
+- /og - User-provided video repurposing with Stein transformations
 - /merge - Merge clips with overlays
 - /overlay - Text overlay
 - /rembg - Background removal (GPU)
@@ -78,6 +79,9 @@ def get_service(name: str):
         elif name == 'stein':
             from services.stein_service import SteinService
             _services[name] = SteinService()
+        elif name == 'og':
+            from services.og_service import OGService
+            _services[name] = OGService()
     return _services[name]
 
 
@@ -316,6 +320,68 @@ async def handle_stein(input_data: dict) -> dict:
         logger.error(f"Error in stein: {e}")
         for f in temp_files:
             cleanup_file(f)
+        return {"error": str(e)}
+
+
+# ============================================================================
+# OG (User-provided video repurposing)
+# ============================================================================
+async def handle_og(input_data: dict) -> dict:
+    """Repurpose user-provided video with Stein-like transformations."""
+    from models.schemas import OGRequest
+
+    start_time = time.time()
+    output_path = None
+
+    try:
+        request = OGRequest(**input_data)
+
+        storage_service = get_service('storage')
+        if not storage_service.enabled:
+            return {"error": "R2 storage not enabled"}
+
+        output_filename = f"og_{uuid.uuid4()}.mp4"
+        output_path = os.path.join(Config.TEMP_DIR, output_filename)
+
+        og_service = get_service('og')
+        result = await og_service.create_og_video(
+            video_url=str(request.video_url),
+            output_path=output_path
+        )
+
+        r2_url = await storage_service.upload_file(
+            file_path=output_path,
+            object_name=f"og/{output_filename}",
+            user_id=None,
+            file_type="outputs",
+            public=True
+        )
+
+        cleanup_file(output_path)
+
+        processing_time = time.time() - start_time
+
+        return {
+            "status": "success",
+            "message": "Video repurposed successfully",
+            "video": {
+                "filename": output_filename,
+                "download_url": r2_url,
+                "randomization": {
+                    "fade_duration": result.get("fade_duration"),
+                    "fade_black_opacity": result.get("fade_black_opacity"),
+                    "stretch_direction": result.get("stretch_direction"),
+                    "stretch_amount": result.get("stretch_amount"),
+                    "slowdown_percent": result.get("slowdown_percent"),
+                    "num_logo_positions": result.get("num_logo_positions")
+                }
+            },
+            "processing_time": processing_time
+        }
+
+    except Exception as e:
+        logger.error(f"Error in og: {e}")
+        cleanup_file(output_path)
         return {"error": str(e)}
 
 
@@ -786,6 +852,7 @@ async def async_handler(job: dict) -> dict:
     - fitpic: 7-image static JPEG collage (4:5 aspect ratio)
     - pov: 8-image POV collage
     - stein: Algorithmically unique video output
+    - og: User-provided video repurposing with Stein transformations
     - merge: Merge video clips with overlays
     - overlay: Add text overlay to image/video
     - rembg: Remove background from image (GPU)
@@ -812,6 +879,8 @@ async def async_handler(job: dict) -> dict:
             return await handle_fitpic(job_input)
         elif action == "stein":
             return await handle_stein(job_input)
+        elif action == "og":
+            return await handle_og(job_input)
         elif action == "pov":
             return await handle_pov(job_input)
 

@@ -571,3 +571,16 @@ class SteinResponse(BaseModel):
     count: int = 1
     videos: Optional[List[dict]] = None  # List of {filename, download_url, randomization}
     processing_time: Optional[float] = None
+
+
+class OGRequest(BaseModel):
+    """Request model for OG video repurposing (user-provided video + Stein transformations)"""
+    video_url: HttpUrl = Field(..., description="URL of video to repurpose")
+
+
+class OGResponse(BaseModel):
+    """Response model for OG endpoint"""
+    status: Literal["success", "error"]
+    message: str
+    video: Optional[dict] = None  # {filename, download_url, randomization}
+    processing_time: Optional[float] = None

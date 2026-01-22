@@ -1,0 +1,64 @@
+{
+  "name": "OG Video Repurposing",
+  "description": "Repurpose user-provided videos with Stein-like transformations (stretch, slowdown, fade-in, logo watermarks). Each call creates an algorithmically unique output from your video.\n\ncURL command:\ncurl -X POST https://api.runpod.ai/v2/66as0tbqrsm2fp/runsync \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Authorization: Bearer YOUR_RUNPOD_API_KEY\" \\\n  -d '{\"input\": {\"action\": \"og\", \"video_url\": \"https://example.com/video.mp4\"}}'",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "id": "manual-trigger-og",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.runpod.ai/v2/66as0tbqrsm2fp/runsync",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"input\": {\n    \"action\": \"og\",\n    \"video_url\": \"{{ $json.video_url }}\"\n  }\n}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "id": "og-request",
+      "name": "Repurpose Video",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "runpod-api-key",
+          "name": "RunPod API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Extract video URL from response\nconst output = $input.first().json.output;\n\nif (output.status === 'error') {\n  return { error: output.error || output.message };\n}\n\n// Return video details\nreturn [{\n  filename: output.video.filename,\n  video_url: output.video.download_url,\n  randomization: output.video.randomization,\n  processing_time: output.processing_time\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "id": "extract-og-result",
+      "name": "Extract Video URL"
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{"node": "Repurpose Video", "type": "main", "index": 0}]]
+    },
+    "Repurpose Video": {
+      "main": [[{"node": "Extract Video URL", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [{"name": "RunPod"}, {"name": "Video Repurposing"}]
+}
