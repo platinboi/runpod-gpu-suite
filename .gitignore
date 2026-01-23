@@ -11,6 +11,9 @@ batch_rembg*.py
 # Documentation with API keys
 n8n-nodes-runpod.md
 
+# n8n workflows (not needed on RunPod)
+n8n-workflows/
+
 # Python
 __pycache__/
 *.py[cod]
