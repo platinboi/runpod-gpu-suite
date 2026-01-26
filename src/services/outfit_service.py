@@ -43,26 +43,15 @@ class OutfitService:
 
     def __init__(self):
         self.download_service = DownloadService()
-        self._database_service = None
-
-    def _get_database_service(self):
-        """Lazy load database service."""
-        if self._database_service is None:
-            from services.database_service import DatabaseService
-            self._database_service = DatabaseService()
-        return self._database_service
 
     async def _get_random_sound(self) -> Optional[Tuple[str, str]]:
         """
-        Get a random sound from the database and download it.
-        Returns (local_path, sound_name) or None if no sounds available.
+        Get a random sound from the static list and download it.
+        Returns (local_path, sound_name) or None if download fails.
         """
         try:
-            db = self._get_database_service()
-            sound = db.get_random_sound()
-            if not sound:
-                logger.warning("No sounds available in tiktok_sounds table")
-                return None
+            from sounds import get_random_sound
+            sound = get_random_sound()
 
             local_path, _ = await self.download_service.download_from_url(sound['url'])
             return local_path, sound['name']

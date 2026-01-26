@@ -58,7 +58,6 @@ class SteinService:
 
     def __init__(self):
         self._download_service = None
-        self._database_service = None
 
     def _get_download_service(self):
         """Lazy load download service."""
@@ -67,24 +66,14 @@ class SteinService:
             self._download_service = DownloadService()
         return self._download_service
 
-    def _get_database_service(self):
-        """Lazy load database service."""
-        if self._database_service is None:
-            from services.database_service import DatabaseService
-            self._database_service = DatabaseService()
-        return self._database_service
-
     async def _get_random_sound(self) -> Optional[Tuple[str, str]]:
         """
-        Get a random sound from the database and download it.
-        Returns (local_path, sound_name) or None if no sounds available.
+        Get a random sound from the static list and download it.
+        Returns (local_path, sound_name) or None if download fails.
         """
         try:
-            db = self._get_database_service()
-            sound = db.get_random_sound()
-            if not sound:
-                logger.warning("No sounds available in tiktok_sounds table")
-                return None
+            from sounds import get_random_sound
+            sound = get_random_sound()
 
             download_service = self._get_download_service()
             local_path, _ = await download_service.download_from_url(sound['url'])
