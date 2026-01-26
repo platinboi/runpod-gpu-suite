@@ -116,7 +116,8 @@ class DownloadService:
             'image/png': '.png',
             'video/mp4': '.mp4',
             'video/quicktime': '.mov',
-            'video/x-msvideo': '.avi'
+            'video/x-msvideo': '.avi',
+            'audio/mpeg': '.mp3'
         }
 
         return extension_map.get(base_type, '.tmp')

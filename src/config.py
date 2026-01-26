@@ -24,10 +24,11 @@ class Config:
     INTER_BOLD = TIKTOK_SANS_SEMIBOLD
 
     # Allowed file formats
-    ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".mp4", ".mov", ".avi"}
+    ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".mp4", ".mov", ".avi", ".mp3"}
     ALLOWED_MIME_TYPES = {
         "image/jpeg", "image/png", "image/jpg",
         "video/mp4", "video/quicktime", "video/x-msvideo",
+        "audio/mpeg",  # For TikTok sound MP3s
         "application/octet-stream"  # Fallback for uploads without proper MIME type
     }
 
