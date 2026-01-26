@@ -7,14 +7,16 @@ Each output looks identical to humans but has unique hash due to:
 - Random slowdown (0-9%)
 - Logo at 20% opacity, appears after fade-in
 - Logo position changes every 3 seconds
+- Random TikTok sound added as audio track
 """
 import os
 import random
 import subprocess
 import logging
+import tempfile
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,7 @@ class SteinService:
 
     def __init__(self):
         self._download_service = None
+        self._database_service = None
 
     def _get_download_service(self):
         """Lazy load download service."""
@@ -63,6 +66,32 @@ class SteinService:
             from services.download_service import DownloadService
             self._download_service = DownloadService()
         return self._download_service
+
+    def _get_database_service(self):
+        """Lazy load database service."""
+        if self._database_service is None:
+            from services.database_service import DatabaseService
+            self._database_service = DatabaseService()
+        return self._database_service
+
+    async def _get_random_sound(self) -> Optional[Tuple[str, str]]:
+        """
+        Get a random sound from the database and download it.
+        Returns (local_path, sound_name) or None if no sounds available.
+        """
+        try:
+            db = self._get_database_service()
+            sound = db.get_random_sound()
+            if not sound:
+                logger.warning("No sounds available in tiktok_sounds table")
+                return None
+
+            download_service = self._get_download_service()
+            local_path, _ = await download_service.download_from_url(sound['url'])
+            return local_path, sound['name']
+        except Exception as e:
+            logger.error(f"Failed to get random sound: {e}")
+            return None
 
     async def _get_random_clip(self) -> Tuple[str, str]:
         """Select and download a random STEIN clip. Returns (local_path, clip_name)."""
@@ -194,6 +223,8 @@ class SteinService:
         """
         clip_path = None
         logo_path = None
+        sound_path = None
+        sound_name = None
         temp_files = []
 
         try:
@@ -202,6 +233,14 @@ class SteinService:
             if clip_path.startswith("/tmp") or "/temp/" in clip_path:
                 temp_files.append(clip_path)
             logger.info(f"Selected clip: {clip_name}")
+
+            # Get random sound for audio track
+            sound_result = await self._get_random_sound()
+            if sound_result:
+                sound_path, sound_name = sound_result
+                if sound_path.startswith("/tmp") or "/temp/" in sound_path:
+                    temp_files.append(sound_path)
+                logger.info(f"Selected sound: {sound_name}")
 
             # Get logo
             logo_path = await self._get_logo()
@@ -288,6 +327,29 @@ class SteinService:
             if not os.path.exists(output_path):
                 raise RuntimeError("Stein output file not created")
 
+            # Add audio track if sound was downloaded
+            if sound_path and os.path.exists(sound_path):
+                from services.ffmpeg_service import FFmpegService
+
+                # Create temp file for video without audio
+                video_no_audio = output_path + ".noaudio.mp4"
+                os.rename(output_path, video_no_audio)
+                temp_files.append(video_no_audio)
+
+                try:
+                    FFmpegService.add_audio_track(
+                        video_path=video_no_audio,
+                        audio_path=sound_path,
+                        output_path=output_path
+                    )
+                    logger.info(f"Added audio track: {sound_name}")
+                except Exception as e:
+                    logger.error(f"Failed to add audio track: {e}")
+                    # Restore original video without audio
+                    if os.path.exists(video_no_audio):
+                        os.rename(video_no_audio, output_path)
+                    sound_name = None  # Mark as failed
+
             output_size = os.path.getsize(output_path)
 
             return {
@@ -301,7 +363,8 @@ class SteinService:
                 "stretch_amount": stretch_amount,
                 "slowdown_percent": slowdown_percent,
                 "logo_variant": "white",
-                "num_logo_positions": num_positions
+                "num_logo_positions": num_positions,
+                "sound_name": sound_name
             }
 
         finally:

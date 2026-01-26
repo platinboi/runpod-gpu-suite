@@ -10,7 +10,7 @@ import random
 import textwrap
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 
 from config import Config
 from models.schemas import (
@@ -43,6 +43,32 @@ class OutfitService:
 
     def __init__(self):
         self.download_service = DownloadService()
+        self._database_service = None
+
+    def _get_database_service(self):
+        """Lazy load database service."""
+        if self._database_service is None:
+            from services.database_service import DatabaseService
+            self._database_service = DatabaseService()
+        return self._database_service
+
+    async def _get_random_sound(self) -> Optional[Tuple[str, str]]:
+        """
+        Get a random sound from the database and download it.
+        Returns (local_path, sound_name) or None if no sounds available.
+        """
+        try:
+            db = self._get_database_service()
+            sound = db.get_random_sound()
+            if not sound:
+                logger.warning("No sounds available in tiktok_sounds table")
+                return None
+
+            local_path, _ = await self.download_service.download_from_url(sound['url'])
+            return local_path, sound['name']
+        except Exception as e:
+            logger.error(f"Failed to get random sound: {e}")
+            return None
 
     async def create_outfit_video(
         self,
@@ -54,7 +80,17 @@ class OutfitService:
         """
         image_paths: List[str] = []
         text_files: List[str] = []
+        sound_path: Optional[str] = None
+        sound_name: Optional[str] = None
+        temp_files: List[str] = []
         try:
+            # Get random sound for audio track
+            sound_result = await self._get_random_sound()
+            if sound_result:
+                sound_path, sound_name = sound_result
+                temp_files.append(sound_path)
+                logger.info(f"Selected sound: {sound_name}")
+
             # Download all images concurrently
             download_tasks = [
                 self.download_service.download_from_url(str(url))
@@ -157,13 +193,37 @@ class OutfitService:
             if not os.path.exists(output_path):
                 raise RuntimeError("Outfit output file not created")
 
+            # Add audio track if sound was downloaded
+            if sound_path and os.path.exists(sound_path):
+                from services.ffmpeg_service import FFmpegService
+
+                # Create temp file for video without audio
+                video_no_audio = output_path + ".noaudio.mp4"
+                os.rename(output_path, video_no_audio)
+                temp_files.append(video_no_audio)
+
+                try:
+                    FFmpegService.add_audio_track(
+                        video_path=video_no_audio,
+                        audio_path=sound_path,
+                        output_path=output_path
+                    )
+                    logger.info(f"Added audio track: {sound_name}")
+                except Exception as e:
+                    logger.error(f"Failed to add audio track: {e}")
+                    # Restore original video without audio
+                    if os.path.exists(video_no_audio):
+                        os.rename(video_no_audio, output_path)
+                    sound_name = None  # Mark as failed
+
             output_size = os.path.getsize(output_path)
 
             return {
                 "success": True,
                 "output_path": output_path,
                 "output_size": output_size,
-                "total_input_size": total_input_size
+                "total_input_size": total_input_size,
+                "sound_name": sound_name
             }
 
         finally:
@@ -176,6 +236,12 @@ class OutfitService:
                         os.remove(path)
                 except Exception as e:
                     logger.warning("Failed to cleanup text temp file %s: %s", path, e)
+            for path in temp_files:
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except Exception as e:
+                    logger.warning("Failed to cleanup temp file %s: %s", path, e)
 
     def _wrap_text(self, text: str, font_size: int, max_width_px: int) -> Tuple[str, int]:
         """

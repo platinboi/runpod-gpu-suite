@@ -231,3 +231,27 @@ class DatabaseService:
         except Exception as e:
             logger.warning(f"Database connection check failed: {e}")
             return False
+
+    def get_random_sound(self) -> Optional[Dict]:
+        """
+        Get a random sound from the tiktok_sounds table.
+
+        Returns:
+            Dict with 'id', 'name', 'url', 'duration_seconds' or None if no sounds exist
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                cursor.execute("""
+                    SELECT id, name, url, duration_seconds
+                    FROM tiktok_sounds
+                    ORDER BY RANDOM()
+                    LIMIT 1
+                """)
+                row = cursor.fetchone()
+                if row:
+                    return dict(row)
+                return None
+        except Exception as e:
+            logger.error(f"Error getting random sound: {e}")
+            return None

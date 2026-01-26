@@ -756,3 +756,79 @@ class FFmpegService:
         except Exception as e:
             logger.error(f"Error scaling video: {str(e)}")
             raise
+
+    @staticmethod
+    def add_audio_track(
+        video_path: str,
+        audio_path: str,
+        output_path: str
+    ) -> Dict[str, Any]:
+        """
+        Add an audio track to a video file.
+
+        Uses stream copy for video (fast, no re-encoding) and AAC for audio.
+        The output duration matches the video length (-shortest).
+
+        Args:
+            video_path: Path to input video (no audio or audio will be replaced)
+            audio_path: Path to audio file (MP3, AAC, etc.)
+            output_path: Path for output video with audio
+
+        Returns:
+            Dict with success status and output info
+
+        Raises:
+            Exception: If adding audio fails
+        """
+        try:
+            if not os.path.exists(video_path):
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+            if not os.path.exists(audio_path):
+                raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+            logger.info(f"Adding audio track to video: {video_path}")
+
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-i', audio_path,
+                '-map', '0:v',      # Take video from first input
+                '-map', '1:a',      # Take audio from second input
+                '-c:v', 'copy',     # Copy video stream (no re-encode, fast)
+                '-c:a', 'aac',      # Encode audio as AAC
+                '-b:a', '192k',     # Audio bitrate
+                '-shortest',        # End when video ends
+                '-movflags', '+faststart',
+                output_path
+            ]
+
+            logger.info(f"Running FFmpeg add_audio command: {' '.join(cmd)}")
+
+            process = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120  # 2 minute timeout
+            )
+
+            if process.returncode != 0:
+                logger.error(f"FFmpeg add_audio error: {process.stderr}")
+                raise Exception(f"FFmpeg add_audio failed: {process.stderr}")
+
+            if not os.path.exists(output_path):
+                raise Exception("Output file with audio was not created")
+
+            output_size = os.path.getsize(output_path)
+            logger.info(f"Successfully added audio: {output_path} ({output_size} bytes)")
+
+            return {
+                "success": True,
+                "output_path": output_path,
+                "output_size": output_size
+            }
+
+        except subprocess.TimeoutExpired:
+            raise Exception("FFmpeg add_audio timed out (max 2 minutes)")
+        except Exception as e:
+            logger.error(f"Error adding audio track: {str(e)}")
+            raise
