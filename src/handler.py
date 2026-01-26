@@ -296,6 +296,7 @@ async def handle_stein(input_data: dict) -> dict:
                 "filename": output_filename,
                 "download_url": r2_url,
                 "source_clip": result.get("source_clip"),
+                "sound_name": result.get("sound_name"),
                 "randomization": {
                     "fade_duration": result.get("fade_duration"),
                     "fade_black_opacity": result.get("fade_black_opacity"),
