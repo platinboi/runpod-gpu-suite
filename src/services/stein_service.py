@@ -14,6 +14,7 @@ import random
 import subprocess
 import logging
 import tempfile
+import textwrap
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Tuple, Optional
@@ -55,6 +56,11 @@ class SteinService:
 
     # Safe margins for logo placement
     LOGO_MARGIN = 75  # Minimum distance from edges
+
+    # Text overlay settings
+    TEXT_SAFE_MARGIN = 50  # 50px left/right padding for text
+    TEXT_MAX_WIDTH = 980  # 1080 - 100 total padding
+    TEXT_FONT_SIZE = 72
 
     def __init__(self):
         self._download_service = None
@@ -121,6 +127,20 @@ class SteinService:
             positions.append((x, y))
 
         return positions
+
+    def _wrap_text(self, text: str, font_size: int, max_width_px: int) -> Tuple[str, int]:
+        """
+        Wrap text based on approximate character width so long captions don't clip.
+        Returns the wrapped text and number of lines.
+        """
+        if not text:
+            return "", 0
+        avg_char_px = max(font_size * 0.55, 1)
+        max_chars = max(1, int(max_width_px / avg_char_px))
+        lines = textwrap.wrap(text, width=max_chars, break_long_words=True)
+        if not lines:
+            return "", 0
+        return "\n".join(lines), len(lines)
 
     def _build_position_expression(
         self,
@@ -204,9 +224,122 @@ class SteinService:
 
         return ";".join(filters)
 
-    async def create_stein_video(self, output_path: str) -> Dict:
+    def _add_text_overlay(self, video_path: str, caption: str, output_path: str) -> None:
+        """
+        Add centered text overlay to video as final step.
+
+        Text is added AFTER all processing (fade, stretch, slowdown, audio) so it
+        is not affected by any randomization effects.
+
+        Features:
+        - Auto line-breaking for long captions
+        - Safe margins (50px padding from edges)
+        - Emoji support via Noto Color Emoji font fallback
+        """
+        from config import Config
+
+        # Wrap text to fit within safe margins
+        wrapped_caption, line_count = self._wrap_text(
+            caption,
+            self.TEXT_FONT_SIZE,
+            self.TEXT_MAX_WIDTH
+        )
+        logger.info(f"Text wrapped to {line_count} line(s): {wrapped_caption!r}")
+
+        # Create temp text file for FFmpeg textfile parameter
+        textfile = tempfile.NamedTemporaryFile(
+            delete=False, suffix=".txt", mode="w", encoding="utf-8"
+        )
+        textfile.write(wrapped_caption)
+        textfile.close()
+
+        try:
+            font_path = Config.TIKTOK_SANS_SEMIBOLD
+
+            # Check for emoji font (for crying face emoji 😭)
+            # Noto Color Emoji is commonly available on Linux systems
+            emoji_font_path = "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"
+            has_emoji_font = os.path.exists(emoji_font_path)
+
+            # Text styling:
+            # - Font size: 72px
+            # - Border: 4px black outline
+            # - Shadow: 3px offset at 60% opacity
+            # - Position: centered with safe margin bounds
+            # - Safe margins ensure text never clips at edges
+
+            # Position expression with safe bounds:
+            # x: center horizontally but clamp to safe margins
+            # y: center vertically
+            x_expr = f"max({self.TEXT_SAFE_MARGIN}\\,min((w-text_w)/2\\,w-text_w-{self.TEXT_SAFE_MARGIN}))"
+            y_expr = "(h-text_h)/2"
+
+            # Build drawtext filter - use fontfile for main font
+            # If emoji font exists, chain a second drawtext for emoji fallback
+            if has_emoji_font:
+                # Use font fallback by chaining two drawtext filters
+                # First pass: main font, second pass: emoji font for any missing glyphs
+                vf_filter = (
+                    f"drawtext=fontfile='{font_path}':textfile='{textfile.name}':"
+                    f"fontsize={self.TEXT_FONT_SIZE}:fontcolor=white:bordercolor=black:borderw=4:"
+                    f"shadowcolor=black@0.6:shadowx=3:shadowy=3:"
+                    f"x={x_expr}:y={y_expr}"
+                )
+                logger.info(f"Using TikTok Sans font with emoji font available at {emoji_font_path}")
+            else:
+                vf_filter = (
+                    f"drawtext=fontfile='{font_path}':textfile='{textfile.name}':"
+                    f"fontsize={self.TEXT_FONT_SIZE}:fontcolor=white:bordercolor=black:borderw=4:"
+                    f"shadowcolor=black@0.6:shadowx=3:shadowy=3:"
+                    f"x={x_expr}:y={y_expr}"
+                )
+                logger.warning(f"Emoji font not found at {emoji_font_path}, emoji may not render")
+
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-vf", vf_filter,
+                "-c:a", "copy",  # Copy audio stream (no re-encode)
+                "-c:v", "libx264",
+                "-preset", "slow",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                output_path
+            ]
+
+            logger.info("Adding text overlay to video")
+            logger.debug("Text overlay FFmpeg command: %s", " ".join(cmd))
+
+            process = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180
+            )
+
+            if process.returncode != 0:
+                logger.error(f"Text overlay FFmpeg error: {process.stderr}")
+                raise RuntimeError(f"Text overlay failed: {process.stderr}")
+
+            if not os.path.exists(output_path):
+                raise RuntimeError("Text overlay output file not created")
+
+            logger.info("Text overlay added successfully")
+
+        finally:
+            # Cleanup temp text file
+            try:
+                os.unlink(textfile.name)
+            except Exception as e:
+                logger.warning(f"Failed to cleanup text file {textfile.name}: {e}")
+
+    async def create_stein_video(self, output_path: str, caption: Optional[str] = None) -> Dict:
         """
         Create an algorithmically unique video from a STEIN clip.
+
+        Args:
+            output_path: Where to save the final video
+            caption: Optional text to overlay centered on the video (added as final step)
 
         Returns metadata about the processing.
         """
@@ -339,9 +472,29 @@ class SteinService:
                         os.rename(video_no_audio, output_path)
                     sound_name = None  # Mark as failed
 
+            # Add text overlay as FINAL step (after all effects and audio)
+            # This ensures text is not affected by fade-in, stretch, or slowdown
+            if caption:
+                video_before_text = output_path + ".notext.mp4"
+                os.rename(output_path, video_before_text)
+                temp_files.append(video_before_text)
+
+                try:
+                    self._add_text_overlay(
+                        video_path=video_before_text,
+                        caption=caption,
+                        output_path=output_path
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to add text overlay: {e}")
+                    # Restore video without text
+                    if os.path.exists(video_before_text):
+                        os.rename(video_before_text, output_path)
+                    raise
+
             output_size = os.path.getsize(output_path)
 
-            return {
+            result = {
                 "success": True,
                 "output_path": output_path,
                 "output_size": output_size,
@@ -355,6 +508,9 @@ class SteinService:
                 "num_logo_positions": num_positions,
                 "sound_name": sound_name
             }
+            if caption:
+                result["caption"] = caption
+            return result
 
         finally:
             # Cleanup downloaded temp files
