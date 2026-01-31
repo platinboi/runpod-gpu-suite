@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libgl1-mesa-glx \
     fonts-dejavu-core \
+    fonts-noto-color-emoji \
     fontconfig \
     tzdata \
     git \
@@ -43,16 +44,15 @@ RUN python -c "from rembg import new_session; session = new_session('birefnet-ge
 # Set Python path
 ENV PYTHONPATH=/app/src
 
-# Create temp and src directories
-RUN mkdir -p /app/temp /app/src
+# Create temp directory
+RUN mkdir -p /app/temp
 
-# Copy entrypoint script (pulls code from GitHub on startup)
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# Copy source code directly into image
+COPY src/ /app/src/
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "print('healthy')" || exit 1
 
-# Run entrypoint (clones repo and starts handler)
-CMD ["/app/entrypoint.sh"]
+# Run handler directly
+CMD ["python", "-u", "/app/src/handler.py"]
