@@ -2,7 +2,7 @@
 Static TikTok sounds list - hardcoded to avoid database dependency on RunPod.
 """
 import random
-from typing import Dict
+from typing import Dict, List
 
 TIKTOK_SOUNDS = [
     {"name": "abx_617750", "url": "https://storage.nocodecult.io/sounds/abx_617750.mp3"},
@@ -45,3 +45,10 @@ TIKTOK_SOUNDS = [
 def get_random_sound() -> Dict[str, str]:
     """Returns a random sound dict with 'name' and 'url' keys."""
     return random.choice(TIKTOK_SOUNDS)
+
+
+def get_random_sounds(count: int = 3) -> List[Dict[str, str]]:
+    """Returns multiple random sounds for retry logic (no duplicates)."""
+    if count >= len(TIKTOK_SOUNDS):
+        return TIKTOK_SOUNDS.copy()
+    return random.sample(TIKTOK_SOUNDS, count)

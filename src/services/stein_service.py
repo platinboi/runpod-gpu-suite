@@ -72,21 +72,6 @@ class SteinService:
             self._download_service = DownloadService()
         return self._download_service
 
-    async def _get_random_sound(self) -> Optional[Tuple[str, str]]:
-        """
-        Get a random sound from the static list and download it.
-        Returns (local_path, sound_name) or None if download fails.
-        """
-        try:
-            from sounds import get_random_sound
-            sound = get_random_sound()
-
-            download_service = self._get_download_service()
-            local_path, _ = await download_service.download_from_url(sound['url'])
-            return local_path, sound['name']
-        except Exception as e:
-            logger.error(f"Failed to get random sound: {e}")
-            return None
 
     async def _get_random_clip(self) -> Tuple[str, str]:
         """Select and download a random STEIN clip. Returns (local_path, clip_name)."""
@@ -345,7 +330,6 @@ class SteinService:
         """
         clip_path = None
         logo_path = None
-        sound_path = None
         sound_name = None
         temp_files = []
 
@@ -355,14 +339,6 @@ class SteinService:
             if clip_path.startswith("/tmp") or "/temp/" in clip_path:
                 temp_files.append(clip_path)
             logger.info(f"Selected clip: {clip_name}")
-
-            # Get random sound for audio track
-            sound_result = await self._get_random_sound()
-            if sound_result:
-                sound_path, sound_name = sound_result
-                if sound_path.startswith("/tmp") or "/temp/" in sound_path:
-                    temp_files.append(sound_path)
-                logger.info(f"Selected sound: {sound_name}")
 
             # Get logo
             logo_path = await self._get_logo()
@@ -449,28 +425,19 @@ class SteinService:
             if not os.path.exists(output_path):
                 raise RuntimeError("Stein output file not created")
 
-            # Add audio track if sound was downloaded
-            if sound_path and os.path.exists(sound_path):
-                from services.ffmpeg_service import FFmpegService
+            # Add audio track with retry logic - REQUIRED (raises on failure)
+            from services.ffmpeg_service import FFmpegService
 
-                # Create temp file for video without audio
-                video_no_audio = output_path + ".noaudio.mp4"
-                os.rename(output_path, video_no_audio)
-                temp_files.append(video_no_audio)
+            video_no_audio = output_path + ".noaudio.mp4"
+            os.rename(output_path, video_no_audio)
+            temp_files.append(video_no_audio)
 
-                try:
-                    FFmpegService.add_audio_track(
-                        video_path=video_no_audio,
-                        audio_path=sound_path,
-                        output_path=output_path
-                    )
-                    logger.info(f"Added audio track: {sound_name}")
-                except Exception as e:
-                    logger.error(f"Failed to add audio track: {e}")
-                    # Restore original video without audio
-                    if os.path.exists(video_no_audio):
-                        os.rename(video_no_audio, output_path)
-                    sound_name = None  # Mark as failed
+            sound_name = await FFmpegService.add_audio_with_retry(
+                video_path=video_no_audio,
+                output_path=output_path,
+                download_service=self._get_download_service()
+            )
+            logger.info(f"Added audio track: {sound_name}")
 
             # Add text overlay as FINAL step (after all effects and audio)
             # This ensures text is not affected by fade-in, stretch, or slowdown

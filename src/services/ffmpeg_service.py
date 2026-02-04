@@ -832,3 +832,98 @@ class FFmpegService:
         except Exception as e:
             logger.error(f"Error adding audio track: {str(e)}")
             raise
+
+    @staticmethod
+    def verify_audio_stream(video_path: str) -> bool:
+        """Verify that a video file contains an audio stream using ffprobe."""
+        try:
+            cmd = [
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'a',
+                '-show_entries', 'stream=codec_type',
+                '-of', 'csv=p=0',
+                video_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            return 'audio' in result.stdout.lower()
+        except Exception as e:
+            logger.error(f"Failed to verify audio stream: {e}")
+            return False
+
+    @staticmethod
+    async def add_audio_with_retry(
+        video_path: str,
+        output_path: str,
+        download_service,
+        max_retries: int = 3
+    ) -> str:
+        """
+        Add audio to a video with retry logic using multiple random sounds.
+
+        Tries up to max_retries different sounds. For each sound:
+        1. Download the sound file
+        2. Add audio track to video
+        3. Verify the output has audio
+
+        Args:
+            video_path: Path to input video (no audio)
+            output_path: Path for output video with audio
+            download_service: DownloadService instance for downloading sounds
+            max_retries: Number of different sounds to try (default 3)
+
+        Returns:
+            The name of the sound that was successfully added
+
+        Raises:
+            RuntimeError: If all retry attempts fail
+        """
+        from sounds import get_random_sounds
+
+        sounds = get_random_sounds(max_retries)
+        errors = []
+
+        for i, sound in enumerate(sounds):
+            sound_path = None
+            try:
+                logger.info(f"Audio attempt {i + 1}/{len(sounds)}: trying sound '{sound['name']}'")
+
+                # Download sound
+                sound_path, _ = await download_service.download_from_url(sound['url'])
+
+                # Add audio track
+                FFmpegService.add_audio_track(
+                    video_path=video_path,
+                    audio_path=sound_path,
+                    output_path=output_path
+                )
+
+                # Verify audio was added
+                if not FFmpegService.verify_audio_stream(output_path):
+                    raise RuntimeError("Audio verification failed - no audio stream in output")
+
+                logger.info(f"Successfully added audio track: {sound['name']}")
+                return sound['name']
+
+            except Exception as e:
+                error_msg = f"Attempt {i + 1} failed with sound '{sound['name']}': {e}"
+                logger.warning(error_msg)
+                errors.append(error_msg)
+
+                # Clean up failed output if it exists
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
+                    except Exception:
+                        pass
+
+            finally:
+                # Clean up downloaded sound file
+                if sound_path and os.path.exists(sound_path):
+                    try:
+                        os.remove(sound_path)
+                    except Exception as cleanup_err:
+                        logger.warning(f"Failed to cleanup sound file: {cleanup_err}")
+
+        # All attempts failed
+        error_summary = "; ".join(errors)
+        raise RuntimeError(f"Failed to add audio after {len(sounds)} attempts: {error_summary}")

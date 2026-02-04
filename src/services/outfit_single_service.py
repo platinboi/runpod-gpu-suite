@@ -64,21 +64,6 @@ class OutfitSingleService:
     def __init__(self):
         self.download_service = DownloadService()
 
-    async def _get_random_sound(self) -> Optional[Tuple[str, str]]:
-        """
-        Get a random sound from the static list and download it.
-        Returns (local_path, sound_name) or None if download fails.
-        """
-        try:
-            from sounds import get_random_sound
-            sound = get_random_sound()
-
-            local_path, _ = await self.download_service.download_from_url(sound['url'])
-            return local_path, sound['name']
-        except Exception as e:
-            logger.error(f"Failed to get random sound: {e}")
-            return None
-
     async def create_outfit_single_video(
         self,
         request: OutfitSingleRequest,
@@ -89,18 +74,10 @@ class OutfitSingleService:
         """
         image_paths: List[str] = []
         text_files: List[str] = []
-        sound_path: Optional[str] = None
         sound_name: Optional[str] = None
         temp_files: List[str] = []
 
         try:
-            # Get random sound for audio track
-            sound_result = await self._get_random_sound()
-            if sound_result:
-                sound_path, sound_name = sound_result
-                temp_files.append(sound_path)
-                logger.info(f"Selected sound: {sound_name}")
-
             # Download all images concurrently
             download_tasks = [
                 self.download_service.download_from_url(str(request.images[slot]))
@@ -199,28 +176,19 @@ class OutfitSingleService:
             if not os.path.exists(output_path):
                 raise RuntimeError("Outfit-single output file not created")
 
-            # Add audio track if sound was downloaded
-            if sound_path and os.path.exists(sound_path):
-                from services.ffmpeg_service import FFmpegService
+            # Add audio track with retry logic - REQUIRED (raises on failure)
+            from services.ffmpeg_service import FFmpegService
 
-                # Create temp file for video without audio
-                video_no_audio = output_path + ".noaudio.mp4"
-                os.rename(output_path, video_no_audio)
-                temp_files.append(video_no_audio)
+            video_no_audio = output_path + ".noaudio.mp4"
+            os.rename(output_path, video_no_audio)
+            temp_files.append(video_no_audio)
 
-                try:
-                    FFmpegService.add_audio_track(
-                        video_path=video_no_audio,
-                        audio_path=sound_path,
-                        output_path=output_path
-                    )
-                    logger.info(f"Added audio track: {sound_name}")
-                except Exception as e:
-                    logger.error(f"Failed to add audio track: {e}")
-                    # Restore original video without audio
-                    if os.path.exists(video_no_audio):
-                        os.rename(video_no_audio, output_path)
-                    sound_name = None  # Mark as failed
+            sound_name = await FFmpegService.add_audio_with_retry(
+                video_path=video_no_audio,
+                output_path=output_path,
+                download_service=self.download_service
+            )
+            logger.info(f"Added audio track: {sound_name}")
 
             output_size = os.path.getsize(output_path)
 
